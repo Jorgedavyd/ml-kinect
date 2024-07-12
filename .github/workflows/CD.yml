@@ -1,0 +1,65 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - '*.*.*'  # Trigger on all tag pushes
+
+jobs:
+  build-and-publish:
+    name: Build and publish Python 🐍 distributions 📦 to PyPI
+    runs-on: ubuntu-latest
+    # Python
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          sudo chmod +x ./scripts/requirements.sh
+          sudo sh requirements.sh
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=$(echo $GITHUB_REF | cut -d/ -f3)" >> $GITHUB_ENV
+
+      - name: Update version in setup.py and lightorch/_version.py
+        run: |
+          sed -i "s/{{VERSION_PLACEHOLDER}}/${{ env.TAG_NAME }}/g" ml_kinect/_version.py
+
+      - name: Build the package
+        run: |
+          python setup.py sdist bdist_wheel
+
+      - name: Publish distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.8.14
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Clean up
+        run: rm -rf build dist *.egg-info
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          release_name: ${{ env.TAG_NAME }}
+          draft: false
+          prerelease: false
